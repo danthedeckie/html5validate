@@ -59,6 +59,8 @@ body_elements = frozenset(( "a", "abbr", "address", "area", "article", "aside", 
 
 media_elements = frozenset(('video', 'audio')) # TODO
 
+embedded_elements = frozenset(("source",))
+
 # TODO: source element
 
 def body_extra_checks(self, tag):
@@ -250,6 +252,15 @@ class Validator(base.Filter):
             raise MisplacedElement(f"'{token_name}' not allowed inside <head>")
 
         elif 'body' in self._inside:
+            if token_name in ('video', 'audio'):
+                if token_type == 'EndTag' and token_name in self._inside:
+                    self._inside.remove(token_name)
+                if token_type == 'StartTag' and not token_name in self._inside:
+                    self._inside.add(token_name)
+
+            if token_name == 'source' and ('video' in self._inside or 'audio' in self._inside):
+                return token
+
             if token['namespace'] == namespaces['html'] and token_name in body_elements:
                 return token
             if token_name == 'body' and token_type == 'EndTag':
