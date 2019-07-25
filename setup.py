@@ -1,6 +1,6 @@
 from setuptools import setup
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 
 setup(
     name='html5validate',
@@ -14,7 +14,7 @@ setup(
     url='https://github.com/danthedeckie/html5validate',
     download_url='https://github.com/danthedeckie/html5validate/tarball/' + __version__,
     keywords = ['html5', 'validation', 'web', 'lint'],
-    test_suite='test_html5validate',
+    test_suite='tests',
     classifiers=['Development Status :: 4 - Beta',
                  'Intended Audience :: Developers',
                  'License :: OSI Approved :: MIT License',

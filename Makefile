@@ -2,7 +2,7 @@ test:
 	python -m unittest
 
 autotest:
-	find . -name \*.py -not -path .\/.v\* | entr make test
+	find .  -not -path .\/.v\* -and -not -path .\/.git\* -name \*.py -or -name \*.html | entr make test
 
 .PHONY: test
 
