@@ -451,7 +451,7 @@ class Validator(base.Filter):
         for ((ns, k), v) in token['data'].items():
             if k in global_attributes:
                 continue
-            if k in element_attributes[token['name']]:
+            if k in element_attributes.get(token['name'], ()):
                 continue
             if k.startswith('data-'):
                 warnings.warn("data-attributes aren't checked for validity yet")
