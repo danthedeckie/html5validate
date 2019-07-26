@@ -10,7 +10,7 @@ from os.path import dirname, join as pathjoin
 import html5validate
 from html5validate import validate, EmptyPage, ParseError, HTML5Invalid
 
-def testfiles(test_type):
+def findfiles(test_type):
     return glob(pathjoin(dirname(__file__),'htmlfiles', test_type, '*.html'))
 
 class TestBasic(unittest.TestCase):
@@ -62,14 +62,14 @@ class TestBrokenHTML(unittest.TestCase):
 
 class TestFromFiles(unittest.TestCase):
     def test_valid_html(self):
-        files = testfiles('valid')
+        files = findfiles('valid')
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
                     validate(html.read())
 
     def test_invalid_html(self):
-        files = testfiles('invalid')
+        files = findfiles('invalid')
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
@@ -77,7 +77,7 @@ class TestFromFiles(unittest.TestCase):
                         validate(html.read())
 
     def test_parseerrors_html(self):
-        files = testfiles('parseerrors')
+        files = findfiles('parseerrors')
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
@@ -85,7 +85,7 @@ class TestFromFiles(unittest.TestCase):
                         validate(html.read())
 
     def test_misplaced_elements(self):
-        files = testfiles('misplaced_elements')
+        files = findfiles('misplaced_elements')
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
@@ -93,7 +93,7 @@ class TestFromFiles(unittest.TestCase):
                         validate(html.read())
 
     def test_invalid_attributes(self):
-        files = testfiles('invalid_attributes')
+        files = findfiles('invalid_attributes')
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
