@@ -89,7 +89,7 @@ html_elements = {
     "datalist": ("body",),
     "del": ("body",),
     "details": ("body",),
-        "summary": ("details",), #4.11.2
+    "summary": ("details",), #4.11.2
     "dfn": ("body",),
     "dialog": ("body",),
     "div": ("body",),
@@ -99,6 +99,7 @@ html_elements = {
     "fieldset": ("body",),
     "legend": ('fieldset',), #4.10.16
     "figure": ("body",),
+    "figcaption": ("figure",), #4.4.13
     "footer": ("body",),
     "form": ("body",),
     "h1": ("body",),
@@ -121,12 +122,12 @@ html_elements = {
     "main": ("body",),
     "map": ("body",),
     "mark": ("body",),
-    "marquee": ("body",),
     "math": ("body",),
     "menu": ("body",),
     "meter": ("body",),
     "nav": ("body",),
     "object": ("body",),
+    "param": ('object',), #4.8.8
     "ol": ("body",),
     "output": ("body",),
     "p": ("body",),
@@ -152,13 +153,18 @@ html_elements = {
     "sup": ("body",),
     "svg": ("body",),
     "table": ("body",),
+    "caption": ('table',), # 4.9.2
+    "colgroup": ('table',), # 4.9.3
+    "col": ('colgroup',), # 4.9.4
     "tbody": ('table',), # 4.9.5
     "thead": ('table',), # 4.9.6
     "tfoot": ('table',), # 4.9.7
     "tr": ('thead', 'tbody', 'tfoot', 'table'), # 4.9.8
     "td": ("tr",), # 4.9.9
     "th": ("tr",), # 4.9.10
-
+    "dl": ('body',), #4.4.9
+    "dt": ('dl',), # 4.4.10
+    "dd": ('dl',), # 4.4.11
     "textarea": ("body",),
     "time": ("body",),
     "u": ("body",),
@@ -166,6 +172,7 @@ html_elements = {
     "var": ("body",),
     "video": ("body",),
     "wbr": ("body",),
+    "track": ('video', 'audio'),
 }
 
 non_recursable = frozenset(('html', 'head', 'body','video','audio', 'noscript', 'form'))
@@ -270,7 +277,22 @@ global_attributes = frozenset((
     'aria-describedby',
     'aria-disabled',
     'aria-label',
+    'role',
     ))
+
+# 15.1
+element_attribute_warnings={
+        'html':
+            ('xmlns', 'xml:lang', 'prefix',),
+        'script':
+            ('charset', 'language',),
+        'img':
+            ('border',),
+        'style':
+            ('type',),
+        'a':
+            ('name',),
+        }
 
 element_attributes={
         'html': #4.1.1
@@ -297,7 +319,8 @@ element_attributes={
         'area': # 4.8.14
             ('alt', 'coords', 'shape', 'href', 'target', 'download', 'ping',
              'rel','referrerpolicy'),
-
+        'col': #4.9.3
+            ('span',),
         'td': #4.9.9
             ('colspan', 'rowspan', 'headers'),
         'th': # 4.9.10
@@ -339,7 +362,18 @@ element_attributes={
             ('disabled', 'form', 'name'),
         'details': #4.11.1
             ('open',),
-
+        'object': # 4.8.7
+            ('data', 'type','name', 'usemap', 'form', 'width', 'height'),
+        'param': # 4.8.8
+            ('name', 'value'),
+        'video': # 4.8.9
+            ('src','crossorigin','poster','preload','autoplay','playsinline',
+             'loop','muted','controls','width','height'),
+        'audio': # 4.8.10
+            ('src','crossorigin', 'preload', 'autoplay', 'loop', 'muted',
+             'controls'),
+        'track': #4.8.11
+            ('kind', 'src', 'srclang', 'label', 'default'),
         ####
         'body': # 4.3.1
             ("onafterprint",
@@ -379,7 +413,7 @@ class Validator(base.Filter):
     """
     def __init__(self, source):
         super().__init__(source)
-        self._inside = set()
+        self._inside = []
 
     def __iter__(self):
         for token in base.Filter.__iter__(self):
@@ -389,22 +423,27 @@ class Validator(base.Filter):
             raise UnclosedTags(self._inside)
 
     def valid_element(self, token):
-        token_name = token['name']
-        token_type = token['type']
+        try:
+            token_name = token['name']
+            token_type = token['type']
+        except KeyError:
+            print(token)
+            raise
+            #breakpoint()
 
         if token_type == 'StartTag':
             if token_name in void_elements:
                 raise InvalidTag(f"{token_name} cannot be used as a Start Tag")
             if token_name in non_recursable and token_name in self._inside:
                 raise MisplacedElement(f"{token_name} cannot be inside {token_name}")
-            self._inside.add(token_name)
+            self._inside.append(token_name)
 
             if token_name in ('html','head','body') and self.in_doctype:
                 # Main "exclusive" sections.
                 return token
 
         elif token_type == 'EndTag':
-            if token_name in self._inside:
+            if token_name in self._inside and self._inside[-1] == token_name:
                 self._inside.remove(token_name)
                 return token
             else:
@@ -441,6 +480,9 @@ class Validator(base.Filter):
             if k.startswith('data-'):
                 warnings.warn("data-attributes aren't checked for validity yet")
                 continue # TODO
+            if k in element_attribute_warnings.get(token['name'], ()):
+                warnings.warn(f"{token['name']} should NOT have {k}={v} in HTML5.")
+                continue
             #if k.startswith('aria-'):
             #    continue # TODO are there other possibilities?
 
@@ -455,6 +497,9 @@ class Validator(base.Filter):
 
         if token.get('namespace', namespaces['html']) != namespaces['html']:
             warnings.warn(f"{token['namespace']} is not yet checked for validation")
+            return token
+
+        if token['type'] == 'Comment':
             return token
 
         self.valid_element(token)
@@ -482,3 +527,7 @@ def validate(text):
     # Now use our checker:
     val = Validator(stream)
     [s for s in val]
+
+if __name__ == '__main__':
+    import sys
+    validate(sys.stdin.read())
