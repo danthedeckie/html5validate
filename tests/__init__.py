@@ -73,7 +73,7 @@ class TestFromFiles(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises(html5validate.ParseError):
+                    with self.assertRaises(html5validate.ValidationException):
                         validate(html.read())
 
     def test_parseerrors_html(self):

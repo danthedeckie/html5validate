@@ -6,6 +6,8 @@
 
 """
 
+import warnings
+
 import html5lib
 
 from html5lib.filters import lint, sanitizer, base
@@ -15,12 +17,6 @@ from html5lib.html5parser import ParseError
 class HTML5Invalid(Exception):
     pass
 
-class InvalideTag(HTML5Invalid):
-    pass
-
-class EmptyPage(HTML5Invalid):
-    pass
-
 #class ParseError(HTML5Invalid):
 #    pass
 
@@ -28,6 +24,12 @@ class EmptyPage(HTML5Invalid):
 #    pass
 
 class ValidationException(HTML5Invalid):
+    pass
+
+class InvalidTag(ValidationException):
+    pass
+
+class EmptyPage(ValidationException):
     pass
 
 class MisplacedElement(ValidationException):
@@ -70,7 +72,7 @@ html_elements = {
     "a": ("body",),
     "abbr": ("body",),
     "address": ("body",),
-    "area": ("body",),
+    "area": ("map",),
     "article": ("body",),
     "aside": ("body",),
     "audio": ("body",),
@@ -87,6 +89,7 @@ html_elements = {
     "datalist": ("body",),
     "del": ("body",),
     "details": ("body",),
+        "summary": ("details",), #4.11.2
     "dfn": ("body",),
     "dialog": ("body",),
     "div": ("body",),
@@ -94,6 +97,7 @@ html_elements = {
     "em": ("body",),
     "embed": ("body",),
     "fieldset": ("body",),
+    "legend": ('fieldset',), #4.10.16
     "figure": ("body",),
     "footer": ("body",),
     "form": ("body",),
@@ -117,6 +121,7 @@ html_elements = {
     "main": ("body",),
     "map": ("body",),
     "mark": ("body",),
+    "marquee": ("body",),
     "math": ("body",),
     "menu": ("body",),
     "meter": ("body",),
@@ -130,10 +135,14 @@ html_elements = {
     "progress": ("body",),
     "q": ("body",),
     "ruby": ("body",),
+    "rt": ('ruby',), #4.5.11
+    "rp": ('ruby',), #4.5.12
     "s": ("body",),
     "samp": ("body",),
     "section": ("body",),
     "select": ("body",),
+    "optgroup": ('select',), # 4.10.9
+    "option": ('select', 'datalist', 'optgroup'), # 4.10.10
     "slot": ("body",),
     "small": ("body",),
     "source": ("video", "audio",), # embedded element
@@ -143,6 +152,13 @@ html_elements = {
     "sup": ("body",),
     "svg": ("body",),
     "table": ("body",),
+    "tbody": ('table',), # 4.9.5
+    "thead": ('table',), # 4.9.6
+    "tfoot": ('table',), # 4.9.7
+    "tr": ('thead', 'tbody', 'tfoot', 'table'), # 4.9.8
+    "td": ("tr",), # 4.9.9
+    "th": ("tr",), # 4.9.10
+
     "textarea": ("body",),
     "time": ("body",),
     "u": ("body",),
@@ -152,7 +168,7 @@ html_elements = {
     "wbr": ("body",),
 }
 
-non_recursable = frozenset(('html', 'head', 'body','video','audio'))
+non_recursable = frozenset(('html', 'head', 'body','video','audio', 'noscript', 'form'))
 
 # 12.1.2
 void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'))
@@ -162,9 +178,7 @@ void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'i
 def body_extra_checks(self, tag):
     # TODO.
     # 3.2.5.2.2 "Flow content"
-    if tag.type == 'area':
-        must_be_in('map')
-    elif tag.type == 'link':
+    if tag.type == 'link':
         if_allowed_in_body
     elif tag.type == 'main':
         if_hierarchically_correct_main
@@ -267,6 +281,10 @@ global_attributes = frozenset((
     "onvolumechange",
     "onwaiting",
     "onwheel",
+    # ARIA
+    'aria-describedby',
+    'aria-disabled',
+    'aria-label',
     ))
 
 element_attributes={
@@ -274,6 +292,8 @@ element_attributes={
             ('manifest',),
         'base': # 4.2.3
             ('href', 'target'),
+        'canvas': # 4.12.5
+            ('width', 'height'),
         'link': #4.2.4
             ('href', 'crossorigin', 'rel', 'media', 'integrity', 'hreflang',
                 'type', 'referrerpolicy', 'sizes', 'imgsrcset', 'imagesizes',
@@ -282,9 +302,59 @@ element_attributes={
             ('name', 'http-equiv', 'content', 'charset'),
         'style': # 4.2.6
             ('media',),
+        'q': # 4.5.7
+            ('cite',),
         'img': # 4.8.3
             ('alt', 'src', 'srcset', 'sizes', 'crossorigin', 'usemap', 'ismap',
              'width', 'height', 'referrerpolicy', 'decoding'),
+        'map':  #4.8.13
+            ('name',),
+        'area': # 4.8.14
+            ('alt', 'coords', 'shape', 'href', 'target', 'download', 'ping',
+             'rel','referrerpolicy'),
+
+        'td': #4.9.9
+            ('colspan', 'rowspan', 'headers'),
+        'th': # 4.9.10
+            ('colspan', 'rowspan', 'headers', 'scope', 'abbr'),
+        'form': #4.10.3
+            ('accept-charset', 'action', 'autocomplete', 'enctype', 'method',
+             'name', 'novalidate', 'target', 'rel'),
+        'label': #4.10.4
+            ('for',),
+        'input': #4.10.5
+            ('accept', 'alt', 'autocomplete', 'autofocus', 'checked',
+             'dirname', 'disabled', 'form', 'formaction', 'formenctype',
+             'formmethod', 'formnovalidate', 'formtarget', 'height', 'list',
+             'max', 'maxlength', 'min', 'minlength', 'multiple', 'name',
+             'pattern', 'placeholder', 'readonly', 'required', 'size', 'src',
+             'step', 'type', 'value', 'width'),
+        'button': # 4.10.6
+            ('autofocus', 'disabled', 'form', 'formaction', 'formenctype',
+             'formmethod', 'formnovalidate', 'formtarget', 'name', 'type',
+             'value'),
+        'select': #4.10.7
+            ('autocomplete', 'autofocus', 'disabled', 'form', 'multiple',
+             'name', 'required', 'size'),
+        'optgroup': #4.10.9
+            ('disabled', 'label'),
+        'option': #4.10.10
+            ('disabled', 'label', 'selected', 'value'),
+        'textarea': #4.10.11
+            ('autocomplete', 'autofocus', 'cols', 'dirname', 'disabled', 'form',
+             'maxlength', 'minlength', 'name', 'placeholder', 'readonly',
+             'required', 'rows', 'wrap'),
+        'output': #4.10.12
+            ('for', 'form', 'name'),
+        'progress': #4.10.13
+            ('value', 'max'),
+        'meter': #4.10.14
+            ('value', 'min', 'max', 'low', 'high', 'optimum'),
+        'fieldset': #4.10.15
+            ('disabled', 'form', 'name'),
+        'details': #4.11.1
+            ('open',),
+
         ####
         'body': # 4.3.1
             ("onafterprint",
@@ -310,6 +380,9 @@ element_attributes={
         ###
         'source':
             ('src', 'type', 'srcset', 'sizes', 'media'),
+        'script': #4.12.1
+            ('src', 'type', 'nomodule', 'async', 'defer', 'crossorigin',
+             'integrity', 'referrerpolicy'),
         'li':
             ('value',)
         }
@@ -336,7 +409,7 @@ class Validator(base.Filter):
 
         if token_type == 'StartTag':
             if token_name in void_elements:
-                raise InvalideTag(f"{token_name} cannot be used as a Start Tag")
+                raise InvalidTag(f"{token_name} cannot be used as a Start Tag")
             if token_name in non_recursable and token_name in self._inside:
                 raise MisplacedElement(f"{token_name} cannot be inside {token_name}")
             self._inside.add(token_name)
@@ -361,7 +434,7 @@ class Validator(base.Filter):
         try:
             required_parents = html_elements[token_name]
         except KeyError:
-            raise InvalideTag(f"{token_name} is not a valid HTML5 tag.")
+            raise InvalidTag(f"{token_name} is not a valid HTML5 tag.")
 
         if not any(parent in self._inside for parent in required_parents):
             raise MisplacedElement(f"{token_name} must be inside {required_parents}")
@@ -381,9 +454,11 @@ class Validator(base.Filter):
             if k in element_attributes[token['name']]:
                 continue
             if k.startswith('data-'):
+                warnings.warn("data-attributes aren't checked for validity yet")
                 continue # TODO
-            if k.startswith('aria-'):
-                continue # TODO
+            #if k.startswith('aria-'):
+            #    continue # TODO are there other possibilities?
+
             # TODO: ng-, vue-, other custom attributes?  Should be spec'd by
             #       library users.
             raise InvalidAttribute(f' {k} is not a valid attribute for {token["name"]}')
@@ -391,6 +466,10 @@ class Validator(base.Filter):
 
     def check_token(self, token):
         if token['type'] in ('Characters', 'SpaceCharacters'):
+            return token
+
+        if token.get('namespace', namespaces['html']) != namespaces['html']:
+            warnings.warn(f"{token['namespace']} is not yet checked for validation")
             return token
 
         self.valid_element(token)
