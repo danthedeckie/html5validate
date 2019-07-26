@@ -173,21 +173,6 @@ non_recursable = frozenset(('html', 'head', 'body','video','audio', 'noscript', 
 # 12.1.2
 void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'))
 
-# TODO: source element
-
-def body_extra_checks(self, tag):
-    # TODO.
-    # 3.2.5.2.2 "Flow content"
-    if tag.type == 'link':
-        if_allowed_in_body
-    elif tag.type == 'main':
-        if_hierarchically_correct_main
-    elif tag.type == 'meta':
-        if_present('itemprop')
-    elif tag.is_autonomous_custom_element:
-        pass
-
-
 global_attributes = frozenset((
     # 3.2.6 - Can be for ANY
     "class",
