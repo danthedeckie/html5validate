@@ -15,6 +15,9 @@ from html5lib.html5parser import ParseError
 class HTML5Invalid(Exception):
     pass
 
+class InvalideTag(HTML5Invalid):
+    pass
+
 class EmptyPage(HTML5Invalid):
     pass
 
@@ -36,6 +39,9 @@ class InvalidAttribute(ValidationException):
 class NonSecureRequestInSecurePage(ValidationException):
     pass
 
+class UnclosedTags(ValidationException):
+    pass
+
 # 8. Namespaces:
 
 namespaces = {
@@ -47,19 +53,109 @@ namespaces = {
         'xmlns': "http://www.w3.org/2000/xmlns/",
         }
 
-# 3.2.5.2.1 "Metadata content"
+metadata_elements = frozenset(('base','link','meta','noscript','script','style','template','title'))
 
-head_elements = frozenset((
-    'base', 'link', 'meta', 'noscript', 'script', 'style', 'template', 'title',
-    ))
+html_elements = {
+# 3.2.5.2.1 "Metadata content"
+    'base': ("head",),
+    'link': ("head", "body"),
+    'meta': ("head", "body"),
+    'noscript': ("head", "body"),
+    'script': ("head", "body"),
+    'style': ("head", "body"),
+    'template': ("head", "body"),
+    'title': ("head",),
 
 # 3.2.5.2.2 "Flow content"
+    "a": ("body",),
+    "abbr": ("body",),
+    "address": ("body",),
+    "area": ("body",),
+    "article": ("body",),
+    "aside": ("body",),
+    "audio": ("body",),
+    "b": ("body",),
+    "bdi": ("body",),
+    "bdo": ("body",),
+    "blockquote": ("body",),
+    "br": ("body",),
+    "button": ("body",),
+    "canvas": ("body",),
+    "cite": ("body",),
+    "code": ("body",),
+    "data": ("body",),
+    "datalist": ("body",),
+    "del": ("body",),
+    "details": ("body",),
+    "dfn": ("body",),
+    "dialog": ("body",),
+    "div": ("body",),
+    "dl": ("body",),
+    "em": ("body",),
+    "embed": ("body",),
+    "fieldset": ("body",),
+    "figure": ("body",),
+    "footer": ("body",),
+    "form": ("body",),
+    "h1": ("body",),
+    "h2": ("body",),
+    "h3": ("body",),
+    "h4": ("body",),
+    "h5": ("body",),
+    "h6": ("body",),
+    "header": ("body",),
+    "hgroup": ("body",),
+    "hr": ("body",),
+    "i": ("body",),
+    "iframe": ("body",),
+    "img": ("body",),
+    "input": ("body",),
+    "ins": ("body",),
+    "kbd": ("body",),
+    "label": ("body",),
+    "li": ('ol', 'ul', 'menu'), # 4.4.8
+    "main": ("body",),
+    "map": ("body",),
+    "mark": ("body",),
+    "math": ("body",),
+    "menu": ("body",),
+    "meter": ("body",),
+    "nav": ("body",),
+    "object": ("body",),
+    "ol": ("body",),
+    "output": ("body",),
+    "p": ("body",),
+    "picture": ("body",),
+    "pre": ("body",),
+    "progress": ("body",),
+    "q": ("body",),
+    "ruby": ("body",),
+    "s": ("body",),
+    "samp": ("body",),
+    "section": ("body",),
+    "select": ("body",),
+    "slot": ("body",),
+    "small": ("body",),
+    "source": ("video", "audio",), # embedded element
+    "span": ("body",),
+    "strong": ("body",),
+    "sub": ("body",),
+    "sup": ("body",),
+    "svg": ("body",),
+    "table": ("body",),
+    "textarea": ("body",),
+    "time": ("body",),
+    "u": ("body",),
+    "ul": ("body",),
+    "var": ("body",),
+    "video": ("body",),
+    "wbr": ("body",),
+}
 
-body_elements = frozenset(( "a", "abbr", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "blockquote", "br", "button", "canvas", "cite", "code", "data", "datalist", "del", "details", "dfn", "dialog", "div", "dl", "em", "embed", "fieldset", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "i", "iframe", "img", "input", "ins", "kbd", "label", "link", "main", "map", "mark", "math", "menu", "meta", "meter", "nav", "noscript", "object", "ol", "output", "p", "picture", "pre", "progress", "q", "ruby", "s", "samp", "script", "section", "select", "slot", "small", "span", "strong", "sub", "sup", "svg", "table", "template", "textarea", "time", "u", "ul", "var", "video", "wbr", ))
+non_recursable = frozenset(('html', 'head', 'body','video','audio'))
 
-media_elements = frozenset(('video', 'audio')) # TODO
-
-embedded_elements = frozenset(("source",))
+# 12.1.2
+void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'))
 
 # TODO: source element
 
@@ -101,7 +197,6 @@ global_attributes = frozenset((
     "lang",
     "nonce",
     "spellcheck",
-    "style",
     "tabindex",
     "title",
     "translate",
@@ -215,7 +310,8 @@ element_attributes={
         ###
         'source':
             ('src', 'type', 'srcset', 'sizes', 'media'),
-
+        'li':
+            ('value',)
         }
 
 class Validator(base.Filter):
@@ -231,9 +327,30 @@ class Validator(base.Filter):
         for token in base.Filter.__iter__(self):
             yield self.check_token(token)
 
+        if len(self._inside):
+            raise UnclosedTags(self._inside)
+
     def valid_element(self, token):
         token_name = token['name']
         token_type = token['type']
+
+        if token_type == 'StartTag':
+            if token_name in void_elements:
+                raise InvalideTag(f"{token_name} cannot be used as a Start Tag")
+            if token_name in non_recursable and token_name in self._inside:
+                raise MisplacedElement(f"{token_name} cannot be inside {token_name}")
+            self._inside.add(token_name)
+
+            if token_name in ('html','head','body') and self.in_doctype:
+                # Main "exclusive" sections.
+                return token
+
+        elif token_type == 'EndTag':
+            if token_name in self._inside:
+                self._inside.remove(token_name)
+                return token
+            else:
+                raise MisplacedElement(f"End tag for {token_name} when not inside.")
 
         if not 'namespace' in token:
             if token_type == 'Doctype' and token_name == 'html':
@@ -241,46 +358,15 @@ class Validator(base.Filter):
                 return token
             raise ValidationException(f'No Namespace for {token}')
 
-        if 'head' in self._inside:
-            # TODO: way to check must be FIRST element of html. (4.2.1)
-            if token['namespace'] == namespaces['html'] and token_name in head_elements:
-                return token
-            if token_name == 'head' and token_type == 'EndTag':
-                self._inside.remove('head')
-                return token
+        try:
+            required_parents = html_elements[token_name]
+        except KeyError:
+            raise InvalideTag(f"{token_name} is not a valid HTML5 tag.")
 
-            raise MisplacedElement(f"'{token_name}' not allowed inside <head>")
+        if not any(parent in self._inside for parent in required_parents):
+            raise MisplacedElement(f"{token_name} must be inside {required_parents}")
 
-        elif 'body' in self._inside:
-            if token_name in ('video', 'audio'):
-                if token_type == 'EndTag' and token_name in self._inside:
-                    self._inside.remove(token_name)
-                if token_type == 'StartTag' and not token_name in self._inside:
-                    self._inside.add(token_name)
-
-            if token_name == 'source' and ('video' in self._inside or 'audio' in self._inside):
-                return token
-
-            if token['namespace'] == namespaces['html'] and token_name in body_elements:
-                return token
-            if token_name == 'body' and token_type == 'EndTag':
-                self._inside.remove('body')
-                return token
-
-            raise MisplacedElement(f"'{token_name}' not allowed inside <body>")
-
-        if token['namespace'] == 'http://www.w3.org/1999/xhtml':
-            # Not inside anything!
-            if token_name in ('html', 'head', 'body') and self.in_doctype:
-                if token['type'] == 'StartTag' and not token['type'] in self._inside:
-                    self._inside.add(token_name)
-                return token
-            # Is this right? TODO CHECK
-            if token_name in head_elements:
-                self._inside.add('head')
-                return token
-
-        raise ValidationException(f'Not allowed Element: {token["name"]} in {token["namespace"]}')
+        return token
 
 
     def valid_attrs(self, token):
