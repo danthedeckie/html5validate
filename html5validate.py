@@ -7,10 +7,161 @@
 """
 
 import warnings
+from collections import namedtuple
+import re
+from xml.dom import Node
 
 import html5lib
+#from html5lib.treewalkers.base import TreeWalker
+from html5lib.treewalkers.dom import TreeWalker
 
-from html5lib.filters import lint, sanitizer, base
+DocType = namedtuple('DocType', ('name', 'publicId', 'systemId'))
+StartTag = namedtuple('StartTag', ('namespace', 'name', 'attributes'))
+EmptyTag = namedtuple('EmptyTag', ('namespace', 'name', 'attributes', 'has_children'))
+EndTag = namedtuple('EndTag', ('namespace', 'name'))
+Entity = namedtuple('Entity', ('name',))
+
+SpaceCharacters = namedtuple('SpaceCharacters', ('data'))
+Characters = namedtuple('Characters', ('data'))
+Comment = namedtuple('Comment', ('data'))
+
+TEXT_MATCH = re.compile(r'(\s*)(\S?.*\S)(\s*)')
+
+
+class MyWalker:
+    def __init__(self, tree):
+        self.tree = tree
+        self._in_doctype = False
+        self._inside = []
+
+    def __call__(self):
+        currentNode = self.tree
+        while currentNode is not None:
+            if currentNode.nodeType == Node.DOCUMENT_TYPE_NODE:
+                self.doctype(currentNode.name, currentNode.publicId, currentNode.systemId)
+
+            elif currentNode.nodeType in (Node.TEXT_NODE, Node.CDATA_SECTION_NODE):
+                self.text(currentNode.nodeValue)
+
+            elif currentNode.nodeType == Node.ELEMENT_NODE:
+                if hasattr(currentNode, 'tagName'):
+                    if currentNode.tagName in void_elements:
+                        self.emptyTag(currentNode.tagName, currentNode.namespace, currentNode.attributes)
+
+                    self.check_valid_attrs(currentNode.tagName, {k:v 
+                                                 for k,v in currentNode.attributes.items()})
+
+            elif currentNode.nodeType == Node.COMMENT_NODE:
+                self.comment(currentNode)
+
+            elif currentNode.nodeType in (Node.DOCUMENT_NODE, Node.DOCUMENT_FRAGMENT_NODE):
+                self.document_node(currentNode)
+
+            else:
+                self.unknown(currentNode)
+
+            currentNode = currentNode.firstChild \
+                       or currentNode.nextSibling \
+                       or currentNode.parentNode.nextSibling or None
+
+            if currentNode == self.tree:
+                break
+            #print(currentNode.tagName)
+
+    def check_valid_place(self, name):
+        try:
+            required_parents = html_elements[name]
+        except KeyError:
+            raise InvalidTag(f"{name} is not a valid HTML5 tag.")
+
+        if not any(parent in self._inside for parent in required_parents):
+            raise MisplacedElement(f"{name} must be inside {required_parents}")
+        breakpoint()
+
+    def check_valid_attrs(self, name, attributes):
+
+        for (k, v) in attributes.items():
+            if k in global_attributes:
+                continue
+            if k in element_attributes.get(name, ()):
+                continue
+            if k.startswith('data-'):
+                warnings.warn("data-attributes aren't checked for validity yet")
+                continue # TODO
+            if k in element_attribute_warnings.get(name, ()):
+                warnings.warn(f"{name} should NOT have {k}={v} in HTML5.")
+                continue
+            #if k.startswith('aria-'):
+            #    continue # TODO are there other possibilities?
+
+            # TODO: ng-, vue-, other custom attributes?  Should be spec'd by
+            #       library users.
+            raise InvalidAttribute(f' {k} is not a valid attribute for {name}')
+
+    def startTag(self, namespace, name, attributes):
+        self.check_valid_attrs(name, attributes)
+        if name in void_elements:
+            raise InvalidTag(f"{name} cannot be used as a Start Tag")
+        if name in non_recursable and name in self._inside:
+            raise MisplacedElement(f"{name} cannot be inside {name}")
+
+        self._inside.append(name)
+
+        if name in ('html','head','body') and self._in_doctype:
+            # Main "exclusive" sections.
+            return StartTag(namespace, name, attributes)
+
+        self.check_valid_place(name)
+
+        return StartTag(namespace, name, attributes)
+
+    def document_node(self, node):
+        print(node)
+
+
+    def endTag(self, namespace, name):
+        if self._inside[-1] == name:
+            self._inside.remove(name)
+        else:
+            raise MisplacedElement(f"End tag for {name} when not inside.")
+
+        self.check_valid_place(name)
+        return EndTag(namespace, name)
+
+    def emptyTag(self, namespace, name, attrs, hasChildren=False):
+        self.check_valid_place(name)
+        self.check_valid_attrs(name, attrs)
+        return EmptyTag(namespace, name, attrs, hasChildren)
+
+    def text(self, data):
+        try:
+            prefix, mid, suffix = TEXT_MATCH.match(data).groups()
+        except AttributeError:
+            yield Characters(data)
+            return
+
+        if prefix:
+            yield SpaceCharacters(prefix)
+        if mid:
+            yield Characters(mid)
+            if suffix:
+                yield SpaceCharacters(suffix)
+
+    def comment(self, data):
+        return Comment(data)
+
+    def doctype(self, name, publicId=None, systemId=None):
+        self._in_doctype = True
+        return DocType(name, publicId, systemId)
+
+    def entity(self, name):
+        self.check_valid_place(name)
+        return Entity(name)
+
+    def unknown(self, nodeType):
+        raise Exception(f'Unknown! {nodeType}')
+
+#from html5lib.filters import lint, sanitizer, base
 
 from html5lib.html5parser import ParseError
 
@@ -406,104 +557,48 @@ element_attributes={
             ('value',)
         }
 
-class Validator(base.Filter):
+class Validator:
     """
         A Validation html5lib filter / walker, which checks that elements
         are in the right places, and have the right attributes.
     """
     def __init__(self, source):
-        super().__init__(source)
+        self.source = source
         self._inside = []
+        self.previous = []
 
     def __iter__(self):
-        for token in base.Filter.__iter__(self):
+
+        for token in self.source:
             yield self.check_token(token)
+            self.previous.append(token)
 
         if len(self._inside):
             raise UnclosedTags(self._inside)
 
-    def valid_element(self, token):
-        try:
-            token_name = token['name']
-            token_type = token['type']
-        except KeyError:
+    def check_token(self, token):
+        if token.__class__.__name__ in ('Characters', 'SpaceCharacters'):
+            return token
+
+        if isinstance(token, DocType):
+            return token
+
+        if isinstance(token, dict):
             print(token)
-            raise
             #breakpoint()
 
-        if token_type == 'StartTag':
-            if token_name in void_elements:
-                raise InvalidTag(f"{token_name} cannot be used as a Start Tag")
-            if token_name in non_recursable and token_name in self._inside:
-                raise MisplacedElement(f"{token_name} cannot be inside {token_name}")
-            self._inside.append(token_name)
-
-            if token_name in ('html','head','body') and self.in_doctype:
-                # Main "exclusive" sections.
-                return token
-
-        elif token_type == 'EndTag':
-            if token_name in self._inside and self._inside[-1] == token_name:
-                self._inside.remove(token_name)
-                return token
-            else:
-                raise MisplacedElement(f"End tag for {token_name} when not inside.")
-
-        if not 'namespace' in token:
-            if token_type == 'Doctype' and token_name == 'html':
-                self.in_doctype = True
-                return token
-            raise ValidationException(f'No Namespace for {token}')
-
-        try:
-            required_parents = html_elements[token_name]
-        except KeyError:
-            raise InvalidTag(f"{token_name} is not a valid HTML5 tag.")
-
-        if not any(parent in self._inside for parent in required_parents):
-            raise MisplacedElement(f"{token_name} must be inside {required_parents}")
-
-        return token
-
-
-    def valid_attrs(self, token):
-        if not 'data' in token:
+        if isinstance(token, str):
+            print(token)
             return token
-        if not token['data']:
+            #breakpoint()
+
+        if token.namespace != namespaces['html']:
+            warnings.warn(f"{token.namespace} is not yet checked for validation")
             return token
 
-        for ((ns, k), v) in token['data'].items():
-            if k in global_attributes:
-                continue
-            if k in element_attributes.get(token['name'], ()):
-                continue
-            if k.startswith('data-'):
-                warnings.warn("data-attributes aren't checked for validity yet")
-                continue # TODO
-            if k in element_attribute_warnings.get(token['name'], ()):
-                warnings.warn(f"{token['name']} should NOT have {k}={v} in HTML5.")
-                continue
-            #if k.startswith('aria-'):
-            #    continue # TODO are there other possibilities?
-
-            # TODO: ng-, vue-, other custom attributes?  Should be spec'd by
-            #       library users.
-            raise InvalidAttribute(f' {k} is not a valid attribute for {token["name"]}')
-
-
-    def check_token(self, token):
-        if token['type'] in ('Characters', 'SpaceCharacters'):
+        if token.__class__.__name__ == 'Comment':
             return token
 
-        if token.get('namespace', namespaces['html']) != namespaces['html']:
-            warnings.warn(f"{token['namespace']} is not yet checked for validation")
-            return token
-
-        if token['type'] == 'Comment':
-            return token
-
-        self.valid_element(token)
-        self.valid_attrs(token)
 
         return token
 
@@ -518,16 +613,25 @@ def validate(text):
         raise EmptyPage()
 
     dom = PARSER.parse(text)
-    walker = html5lib.getTreeWalker('dom')
-    stream = walker(dom)
+    #walker = html5lib.getTreeWalker('dom')
+    #stream = walker(dom)
+    #breakpoint()
     # Use html5lib's lint filter first:
-    lnt = lint.Filter(stream)
-    [l for l in lnt]
+
+    s2 = MyWalker(dom)
+    s2()
+    #[s for s in s2]
+    #breakpoint()
 
     # Now use our checker:
-    val = Validator(stream)
-    [s for s in val]
+    #val = Validator(s2)
+    #[s for s in val]
 
 if __name__ == '__main__':
     import sys
-    validate(sys.stdin.read())
+    if len(sys.argv) > 1:
+        for f in sys.argv[1:]:
+            with open(f) as fh:
+                validate(fh.read())
+    else:
+        validate(sys.stdin.read())
