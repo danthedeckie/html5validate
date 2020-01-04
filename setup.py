@@ -15,6 +15,7 @@ setup(
     download_url='https://github.com/danthedeckie/html5validate/tarball/' + __version__,
     keywords = ['html5', 'validation', 'web', 'lint'],
     test_suite='tests',
+    install_requires=["html5lib"],
     classifiers=['Development Status :: 4 - Beta',
                  'Intended Audience :: Developers',
                  'License :: OSI Approved :: MIT License',
