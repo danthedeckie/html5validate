@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple, Union, Generator
 
 class Node(Enum):
     DOCUMENT_NODE = auto()
@@ -40,7 +40,10 @@ class Tag:
     def __repr__(self):
         return f'<Tag: {self.nodeType} {self.tagName if self.tagName else ""}, {self.nodeValue if self.nodeValue else ""} {self.attributes}>'
 
-def read_tag(raw, start_position):
+def read_until(raw: str, start_position: int, initial=False) -> Tuple[str, int]:
+    pass
+
+def read_tag(raw: str, start_position: int) -> Tuple[Tag, int]:
     end_position = start_position
     #TODO: this is not right!
     while raw[end_position] != '>':
@@ -51,9 +54,10 @@ def read_tag(raw, start_position):
 
     # TODO this is also not right, and needs a char-by-char parser
     # TODO: asserts should be replaced with proper error messages
-    attributes = {}
+    attributes: Dict[str, Union[str, bool]] = {}
     lumps = raw[start_position + 1: end_position].split(' ')
     for lump in lumps[1:]:
+        value: Union[str, bool]
         if '=' in lump:
             key, value = lump.split('=') # TODO: what if '=' in value?
             if value.startswith('"') or value.startswith("'"):
@@ -69,7 +73,7 @@ def read_tag(raw, start_position):
     tag = Tag(Node.ELEMENT_NODE, tagName=lumps[0], attributes=attributes)
     return tag, end_position - start_position
 
-def parse_str(raw):
+def parse_str(raw: str) -> Generator[Tag, None, None]:
     lineno = 0
     charno = 0
 
