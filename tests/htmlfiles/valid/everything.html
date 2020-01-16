@@ -6,6 +6,26 @@
     </head>
     <body>
         <h1 aria-label="main-title">Everything HTML file!</h1>
+        <h2>TOC</h2>
+        <ol>
+            <li><A href="#nested_divs">Some Nested DIV tags.</a></li>
+            <li><a href="#table">A Table</a></li>
+            <li><a href="#form">A Form</a></li>
+            <li><a href="#svg">An SVG document</a></li>
+        </ol>
+        <h2><A NAME="nested_divs">Some nested DIV tags</a></h2>
+        <div id="div1">
+            <div id="div2">
+                <div id="div3">
+                    <div id="div4">
+                        <div id="div5">
+                            Ta DA!
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <h2><a name="table">A Table</a></h2>
         <table>
             <thead>
                 <tr>
@@ -21,6 +41,8 @@
             </tfoot>
         </table>
 
+        <h2><a name="form">A Form</a></h2>
+
         <form target="/email" method="POST">
             <label>Name:<input type="text" value=""></label>
             <select name="food" autocomplete=false>
@@ -33,6 +55,8 @@
             </textarea>
             <button type="submit">Send!</button>
         </form>
+
+        <h2><a name="SVG">SVG example</a></h2>
     <svg xmlns="http://www.w3.org/2000/svg" version="1.1"
                                             viewBox="0 0 1000 1000">
       <linearGradient id="gradient">
