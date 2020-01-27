@@ -14,7 +14,7 @@ from xml.dom import Node
 
 import html5lib
 
-from lexer import parse_str
+from tagparse import parse_str
 
 # in case we do need to track elements, here are some objects to hold them in:
 DocType = namedtuple('DocType', ('name', 'publicId', 'systemId'))
