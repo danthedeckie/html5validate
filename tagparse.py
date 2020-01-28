@@ -38,7 +38,7 @@ class Tag:
 
     publicId: str
     systemId: str
-    attributes: Dict[str, str] = {}
+    attributes: Dict[str, Union[str, bool]] = {}
 
     lineno: int
     charno: int
@@ -50,7 +50,7 @@ class Tag:
             setattr(self, k, v)
 
     def __repr__(self):
-        return f'<Tag: {self.nodeType} {self.tagName if self.tagName else ""}, {self.nodeValue if self.nodeValue else ""} {self.attributes}>'
+        return f'<Tag: {self.nodeType} {self.tagName if self.tagName else ""}, {self.nodeValue.strip() if self.nodeValue else ""} {self.attributes if self.attributes else ""}>'
 
 def read_tag(raw: str, start_position: int) -> Tuple[Tag, int]:
     """
@@ -115,37 +115,48 @@ def read_tag(raw: str, start_position: int) -> Tuple[Tag, int]:
     def read_quoted():
         nonlocal end_position
         assert raw[end_position] in '"\''
+
         start_quote = raw[end_position]
         end_position += 1
+        start_position = end_position
+
         while raw[end_position] != start_quote:
-            if raw[end_position] == '\'':
+            if raw[end_position] == '\\':
                 end_position += 1
             end_position += 1
+        return raw[start_position:end_position]
 
     def read_keypair():
         nonlocal end_position
-        absorb_ws()
-        if raw[end_position] == '>':
-            return None, None
-        if tag_name[0] == '?' and raw[end_position:end_position+1] == '?>':
-            end_position +=1
-            return None, None
         key = read_word()
         absorb_ws()
+
         if raw[end_position] == '=':
             end_position += 1
             absorb_ws()
+
             if raw[end_position] in '"\'':
                 value = read_quoted()
                 end_position += 1
                 return key, value
             elif raw[end_position] in '\>':
                 return key, True
+            else:
+                value = read_word()
+                if value:
+                    return key, value
         return key, True
 
     attributes: Dict[str, Union[str, bool]] = {}
 
     while True:
+        absorb_ws()
+        if raw[end_position] == '>':
+            break
+        if tag_name[0] == '?' and raw[end_position:end_position+1] == '?>':
+            end_position +=1
+            break
+
         key, value = read_keypair()
         if key:
             if key not in attributes:
