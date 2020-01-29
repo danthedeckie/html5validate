@@ -1,8 +1,8 @@
 from enum import Enum, auto
-from typing import Optional, Dict, Tuple, Union, Generator
+from typing import Optional, Dict, Tuple, Union, Generator, Iterator
 from dataclasses import dataclass
 
-WHITESPACE = '\t\r\n '
+WHITESPACE = '\t\r\n ' # TODO: also 0 byte? Other kinds of whitespace?
 
 @dataclass
 class TagPart:
@@ -59,7 +59,7 @@ class Lexer:
     lineno: int = 0
     charno: int = 0
     current_char: str
-    iterator: Generator[str, None, None]
+    iterator: Iterator[str]
     current_item_start: Optional[int] = None
 
     def __init__(self, raw:str):
@@ -67,7 +67,7 @@ class Lexer:
         self.iterator = iter(raw)
         self.advance()
 
-    def advance(self):
+    def advance(self) -> bool:
         """ Move forward one character """
         try:
             self.current_char = next(self.iterator)
@@ -83,17 +83,17 @@ class Lexer:
             self.charno += 1
         return True
 
-    def _absorb_ws(self):
+    def _absorb_ws(self) -> None:
         while self.current_char in WHITESPACE:
             self.advance()
 
-    def _read_word(self):
+    def _read_word(self) -> str:
         word_start_pos = self.position
         while self.current_char not in WHITESPACE + '=/>':
             self.advance()
         return self.raw[word_start_pos:self.position]
 
-    def _read_quoted(self):
+    def _read_quoted(self) -> str:
         assert self.current_char in '"\''
         start_quote = self.current_char
 
@@ -106,7 +106,7 @@ class Lexer:
             self.advance()
         return self.raw[start_position:self.position]
 
-    def _read_keypair(self):
+    def _read_keypair(self) -> Tuple[str, Union[str, bool]]:
         key = self._read_word()
         self._absorb_ws()
 
@@ -193,7 +193,7 @@ class Lexer:
 
         return Tag(node_type, tagName=tag_name, has_initial_backslash=has_initial_backslash, has_closing_backslash=has_closing_backslash, attributes=attributes)
 
-    def text_node(self):
+    def text_node(self) -> Tag:
         return Tag(Node.TEXT_NODE, nodeValue=self.raw[self.current_item_start: self.position], lineno=self.lineno, charno=self.charno)
 
     def __iter__(self):
