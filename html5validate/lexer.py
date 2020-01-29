@@ -65,7 +65,6 @@ class Lexer:
     def __init__(self, raw:str):
         self.raw = raw
         self.iterator = iter(raw)
-        self.advance()
 
     def advance(self) -> bool:
         """ Move forward one character """
