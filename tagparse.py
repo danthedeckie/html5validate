@@ -203,7 +203,7 @@ def parse_str(raw: str) -> Generator[Tag, None, None]:
             charno += 1
 
         if c == '<':
-            if raw[i + 1] != ' ':
+            if raw[i + 1] not in WHITESPACE:
                 if current_text_start is not None and current_text_start < i:
                     yield text_node()
                     current_text_start = None
