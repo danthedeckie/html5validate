@@ -14,7 +14,7 @@ from xml.dom import Node
 
 import html5lib
 
-from tagparse import parse_str
+from lexer import Lexer
 
 # in case we do need to track elements, here are some objects to hold them in:
 DocType = namedtuple('DocType', ('name', 'publicId', 'systemId'))
@@ -593,8 +593,7 @@ def validate(text):
         raise EmptyPage()
 
     dom = PARSER.parse(text)
-    blobs = list(parse_str(text))
-    print(blobs)
+    print(list(Lexer(text)))
 
     validator = Validator(dom)
     validator()
