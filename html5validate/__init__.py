@@ -104,6 +104,7 @@ class Validator:
                     if currentNode.tagName in rules.void_elements:
                         if hasattr(currentNode, 'has_initial_backslash') and currentNode.has_initial_backslash:
                             self._error(MisplacedEndTag, f"{currentNode.tagName} is a void (contentless) element, and so shouldn't have a closing tag.")
+                         # TODO - should there be a warning about has_closing_backslash and if they're needed or not?
                         self.voidTag(currentNode.tagName, currentNode.attributes)
                     else:
                         # TODO: what if an el has_closing_backslash but isn't void?
@@ -113,6 +114,10 @@ class Validator:
                             self.endTag(currentNode.tagName)
                         else:
                             # NEW CODE IN PROGRESS!:::: TODO TODO
+                            # TODO: This should maybe walk back from the end,
+                            #       closing all possible implied end-tags?
+                            #       I don't think so though.  Just think through
+                            #       this again, and get soem kind of spec confirmation...
                             if self._inside and self._inside[-1] in rules.implied_endtags:
                                 if currentNode.tagName in rules.implied_endtags[self._inside[-1]]:
                                     self.endTag(self._inside[-1])
