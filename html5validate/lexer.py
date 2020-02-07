@@ -2,6 +2,8 @@ from enum import Enum, auto
 from typing import Optional, Dict, Tuple, Union, Generator, Iterator
 from dataclasses import dataclass
 
+from xml.dom import Node
+
 WHITESPACE = '\t\r\n ' # TODO: also 0 byte? Other kinds of whitespace?
 
 @dataclass
@@ -9,6 +11,8 @@ class TagPart:
     content: str
     start: int
 
+"""
+# This might be enough to replace the xml.dom.Node later???
 class Node(Enum):
     DOCUMENT_NODE = auto()
     DOCUMENT_TYPE_NODE = auto()
@@ -19,6 +23,7 @@ class Node(Enum):
     ELEMENT_NODE = auto()
     COMMENT_NODE = auto()
     PROCESSING_INSTRUCTION = auto()
+"""
 
 # This is the full set of attrs we use from the xml API - but we could simplify
 # since we do our own tree stuff - drop the whole parent/child/sibling stuff:
@@ -45,12 +50,24 @@ class Tag:
 
     def __init__(self, nodeType, **kwargs):
         self.nodeType = nodeType
+        # TODO: Remove these? Are they needed?:
+        self.name = kwargs.get('tagName')
+        self.publicId = ''
+        self.systemId = ''
         # TODO: This is lazy!
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):
-        return f'<Tag: {self.nodeType} {self.tagName if self.tagName else ""}, {self.nodeValue.strip() if self.nodeValue else ""} {self.attributes if self.attributes else ""}>'
+        if self.nodeType == Node.TEXT_NODE:
+            return f'TEXT:{self.content}'
+        else:
+            return f'<{"/" if self.has_initial_backslash else ""}' \
+                    'Tag: {self.nodeType}' \
+                    ' {self.tagName if self.tagName else ""},' \
+                    ' {self.nodeValue.strip() if self.nodeValue else ""}' \
+                    ' {self.attributes if self.attributes else ""}' \
+                    ' {"/" if self.has_closing_backslash else ""}>'
 
 
 class Lexer:

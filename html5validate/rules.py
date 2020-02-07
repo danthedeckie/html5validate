@@ -43,10 +43,10 @@ html_elements = {
     'link': ("head", "body"),
     'meta': ("head", "body"),
     'noscript': ("head", "body"),
-    'script': ("head", "body"),
+    'script': ("head", "body", "div", "svg"), # TODO: can script go anywhere?
     'style': ("head", "body"),
     'template': ("head", "body"),
-    'title': ("head",),
+    'title': ("head", "svg"),
 
 # 3.2.5.2.2 "Flow content"
     "a": ("body",),
@@ -131,7 +131,7 @@ html_elements = {
     "strong": ("body",),
     "sub": ("body",),
     "sup": ("body",),
-    "svg": ("body",),
+    "svg": ("body", "svg"), # TODO: confirm svg is nestable?
     "table": ("body",),
     "caption": ('table',), # 4.9.2
     "colgroup": ('table',), # 4.9.3
@@ -153,12 +153,121 @@ html_elements = {
     "video": ("body",),
     "wbr": ("body",),
     "track": ('video', 'audio'),
+
+    # SVG tags: # NOTE: Case Sensitive:
+    "animate": ('svg',),
+    "animateMotion": ('svg',),
+    "animateTransform": ('svg',),
+    "circle": ('svg',),
+    "clipPath": ('svg',),
+    "color-profile": ('svg',),
+    "defs": ('svg',),
+    "desc": ('svg',),
+    "discard": ('svg',),
+    "ellipse": ('svg',),
+    "feBlend": ('svg',),
+    "feColorMatrix": ('svg',),
+    "feComposite": ('svg',),
+    "feConvolveMatrix": ('svg',),
+    "feDiffuseLighting": ('svg',),
+    "feDisplacementMap": ('svg',),
+    "feDistantLight": ('svg',),
+    "feDropShadow": ('svg',),
+    "feFlood": ('svg',),
+    "feFuncA": ('svg',),
+    "feFuncB": ('svg',),
+    "feFuncG": ('svg',),
+    "feFuncR": ('svg',),
+    "feGaussianBlur": ('svg',),
+    "feImage": ('svg',),
+    "feMerge": ('svg',),
+    "feMergeNode": ('svg',),
+    "feMorphology": ('svg',),
+    "feOffset": ('svg',),
+    "fePointLight": ('svg',),
+    "feSpecularLighting": ('svg',),
+    "feSpotLight": ('svg',),
+    "feTile": ('svg',),
+    "feTurbulence": ('svg',),
+    "filter": ('svg',),
+    "foreignObject": ('svg',),
+    "g": ('svg',),
+    "hatch": ('svg',),
+    "hatchpath": ('svg',),
+    "image": ('svg',),
+    "line": ('svg',),
+    "linearGradient": ('svg',),
+    "stop": ('linearGradient',),
+    "marker": ('svg',),
+    "mask": ('svg',),
+    "mesh": ('svg',),
+    "meshgradient": ('svg',),
+    "meshpatch": ('svg',),
+    "meshrow": ('svg',),
+    "metadata": ('svg',),
+    "mpath": ('svg',),
+    "path": ('svg',),
+    "pattern": ('svg',),
+    "polygon": ('svg',),
+    "polyline": ('svg',),
+    "radialGradient": ('svg',),
+    "rect": ('svg',),
+    "set": ('svg',),
+    "solidcolor": ('svg',),
+    "stop": ('svg',),
+    "switch": ('svg',),
+    "symbol": ('svg',),
+    "text": ('svg',),
+    "textPath": ('svg',),
+    "tspan": ('svg',),
+    "unknown": ('svg',),
+    "use": ('svg',),
+    "view": ('svg',),
+    # TODO: MathML?
 }
 
 non_recursable = frozenset(('html', 'head', 'body','video','audio', 'noscript', 'form'))
 
 # 12.1.2
-void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'))
+void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
+    # SVG:
+    'stop', 'circle', 'rect'))
+
+
+#12.1.2.4 (part)
+implied_endtags = {
+        # If inside <key> when starting <value>, end <key> tag.
+        'head': ('body',), # TODO and all non-metadata els?
+        'li': ('li', 'ul', 'ol'), # TODO - confirm ul,ol?
+        'dt': ('dt', 'dd'),
+        'dd': ('dd', 'dt', 'dl'), # TODO - or div? confirm dd rules.
+        'p': ('address', 'article', 'aside', 'blockquote', 'details', 'div', 'dl', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'main', 'menu', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'ul'),
+        'rt': ('rt', 'rp'),
+        'rp': ('rt', 'rp'),
+        'optgroup': ('optgroup'),
+        'option': ('option', 'optgroup'),
+        'thead': ('tbody', 'tfoot'),
+        'tbody': ('tbody', 'tfoot'),
+        'tr': ('tr',),
+        'td': ('td', 'th'),
+        'th': ('td', 'th'),
+        }
+
+closed_by_parent = {
+    "body": ('html',),
+    "td": ("tr",),
+    "li": ("ol", "ul"),
+    # TODO: many more...
+    }
+
+# TODO:
+# So these rules are "if a tag is inside a parent with no more content, you
+# can consider it closed - however, not these parent elements.
+implied_ending_parental_not = {
+        'p': ('a', 'audio', 'del', 'ins', 'map', 'noscript', 'video'),
+        }
+# TODO - check colgroup rules - seems complex, with impled starts, ends
+# if not whitespace/comment, etc etc. Ditto caption, and tbody
 
 global_attributes = frozenset((
     # 3.2.6 - Can be for ANY
@@ -383,6 +492,11 @@ element_attributes={
             ('src', 'type', 'nomodule', 'async', 'defer', 'crossorigin',
              'integrity', 'referrerpolicy'),
         'li':
-            ('value',)
+            ('value',),
+        ###
+        'svg': # https://www.w3.org/TR/2018/CR-SVG2-20180807/struct.html#SVGElement
+            ('xmlns', 'viewBox', 'preserveAspectRatio', 'zoomAndPan', 'transform'), # version *was* there but now gone.
+            # TODO: are CamelCase important?
         }
 
+# TODO: whitespace / character restictions from 12.1.2.6

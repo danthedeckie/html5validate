@@ -14,7 +14,7 @@ from xml.dom import Node
 
 import html5lib
 
-from .lexer import Lexer
+from .lexer import Lexer# , Node
 from . import rules
 
 # in case we do need to track elements, here are some objects to hold them in:
@@ -70,8 +70,10 @@ class Validator:
         Drills through a html5lib HTML tree, and checks all the elements
         against various rules.
     """
-    def __init__(self, tree):
-        self.tree = tree
+    def __init__(self, node_stream=None, tree=None):
+        self.node_stream = node_stream
+        if tree:
+            self.node_stream = self.tree_to_stream(tree)
         self._in_doctype = False
         self._inside = [] # a stack of 
 
@@ -80,9 +82,7 @@ class Validator:
             Actually validate the tree.
         """
 
-        currentNode = self.tree
-        while currentNode is not None:
-
+        for currentNode in self.node_stream:
             if currentNode.nodeType == Node.DOCUMENT_TYPE_NODE:
                 self.doctype(currentNode.name, currentNode.publicId, currentNode.systemId)
 
@@ -92,9 +92,21 @@ class Validator:
             elif currentNode.nodeType == Node.ELEMENT_NODE:
                 if hasattr(currentNode, 'tagName'):
                     if currentNode.tagName in rules.void_elements:
+                        # TODO: what if a void el has an initial_backslash?
                         self.voidTag(currentNode.tagName, currentNode.attributes)
                     else:
-                        self.startTag(currentNode.tagName, currentNode.attributes)
+                        # TODO: what if an el has_closing_backslash but isn't void?
+                        # TODO: what if an el implies closing something else?
+                        #       e.g. <td>in 1<td>not in 1</td>..
+                        if currentNode.has_initial_backslash:
+                            self.endTag(currentNode.tagName)
+                        else:
+                            # NEW CODE IN PROGRESS!:::: TODO TODO
+                            if self._inside and self._inside[-1] in rules.implied_endtags:
+                                if currentNode.tagName in rules.implied_endtags[self._inside[-1]]:
+                                    self.endTag(self._inside[-1])
+
+                            self.startTag(currentNode.tagName, currentNode.attributes)
 
             elif currentNode.nodeType == Node.COMMENT_NODE:
                 self.comment(currentNode)
@@ -105,20 +117,23 @@ class Validator:
             else:
                 self.unknown(currentNode)
 
-            # Go on to the next node, closing this one if needed.
-            # NOTE: we don't actually get given the closing tag from html5lib
-            # here - it's already (theoretically) been parsed.
-
+    def tree_to_stream(self, dom):
+        currentNode = dom
+        while True:
             if currentNode.firstChild:
                 currentNode = currentNode.firstChild
             elif currentNode.nextSibling:
                 currentNode = currentNode.nextSibling
-            else:
+            elif currentNode.parentNode.nextSibling:
                 self.endTag(currentNode.parentNode.tagName)
-                currentNode = currentNode.parentNode.nextSibling or None
-
-            if currentNode == self.tree:
+                currentNode = currentNode.parentNode.nextSibling
+            else:
                 break
+
+            if currentNode == dom:
+                break
+
+            yield currentNode
 
     def check_valid_place(self, name):
         if name in ('html', 'head', 'body') and not self._inside:
@@ -133,15 +148,30 @@ class Validator:
             if name in rules.metadata_elements:
                 return True
 
-        if self._inside == ['html', 'head'] and name == 'body':
-            self._inside.pop()
+        if self._inside[-1] == 'head':
+            if name == 'body':
+                self._inside.pop()
+            elif name not in rules.metadata_elements:
+                self._inside.pop()
+                self._inside.append('body')
+                return True
+
+        # implicit head & body tags.
+        # TODO: should there be an implicit_start rules?
+        if self._inside == ['html'] and 'head' in required_parents:
+            self._inside.append('head')
+        elif self._inside == ['html'] and 'body' in required_parents:
+            self._inside.append('body')
 
         if not any(parent in self._inside for parent in required_parents):
-            raise MisplacedElement(f"{name} must be inside {required_parents}")
+            raise MisplacedElement(f"{name} must be inside {required_parents} (currently: {self._inside})")
 
     def check_valid_attrs(self, name, attributes):
+        case_sensitive = 'svg' in self._inside
 
         for (k, v) in attributes.items():
+            if not case_sensitive:
+                k = k.lower()
             if k in rules.global_attributes:
                 continue
             if k in rules.element_attributes.get(name, ()):
@@ -152,6 +182,10 @@ class Validator:
             if k in rules.element_attribute_warnings.get(name, ()):
                 warnings.warn(f"{name} should NOT have {k}={v} in HTML5.")
                 continue
+            if 'svg' in self._inside or name == 'svg':
+                warnings.warn(f"svg attributes aren't checked for validity yet")
+                continue
+
             #if k.startswith('aria-'):
             #    continue # TODO are there other possibilities?
 
@@ -160,7 +194,8 @@ class Validator:
             raise InvalidAttribute(f' {k} is not a valid attribute for {name}')
 
     def startTag(self, name, attributes):
-
+        if 'svg' not in self._inside:
+            name = name.lower()
 
         if name in rules.void_elements:
             raise InvalidTag(f"{name} cannot be used as a Start Tag")
@@ -174,15 +209,22 @@ class Validator:
         return StartTag(name, attributes)
 
     def document_node(self, node):
+        print('doctype!'); exit()
         self._in_doctype = True
 
     def endTag(self, name):
+        while not self._inside[-1] == name:
+            try:
+                if name in rules.closed_by_parent[self._inside[-1]]:
+                    self._inside.pop()
+                else:
+                    raise KeyError(f"{self._inside[-1]} not closed by {name}")
+            except KeyError:
+                raise MisplacedElement(f"End tag for {name} when not inside. (currently: {self._inside})")
         if self._inside[-1] == name:
             self._inside.pop()
         else:
-            if self._inside == ['html', 'body'] and name == 'html':
-                return
-            raise MisplacedElement(f"End tag for {name} when not inside.")
+            raise MisplacedElement(f"End tag for {name} when not inside. (currently: {self._inside})")
 
         self.check_valid_place(name)
         return EndTag(name)
@@ -229,9 +271,11 @@ def validate(text):
         raise EmptyPage()
 
     dom = PARSER.parse(text)
-    print(list(Lexer(text)))
+    stream = list(Lexer(text))
+    #print(stream)
 
-    validator = Validator(dom)
+    # validator = Validator(tree=dom)
+    validator = Validator(node_stream=stream)
     validator()
 
 if __name__ == '__main__':
