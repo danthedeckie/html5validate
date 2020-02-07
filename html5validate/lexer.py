@@ -60,21 +60,21 @@ class Tag:
 
     def __repr__(self):
         if self.nodeType == Node.TEXT_NODE:
-            return f'TEXT:{self.content}'
+            return f'TEXT:{self.nodeValue}'
         else:
             return f'<{"/" if self.has_initial_backslash else ""}' \
-                    'Tag: {self.nodeType}' \
-                    ' {self.tagName if self.tagName else ""},' \
-                    ' {self.nodeValue.strip() if self.nodeValue else ""}' \
-                    ' {self.attributes if self.attributes else ""}' \
-                    ' {"/" if self.has_closing_backslash else ""}>'
+                   f'Tag: {self.nodeType}' \
+                   f' {self.tagName if self.tagName else ""},' \
+                   f' {self.nodeValue.strip() if self.nodeValue else ""}' \
+                   f' {self.attributes if self.attributes else ""}' \
+                   f' {"/" if self.has_closing_backslash else ""}>'
 
 
 class Lexer:
     raw: str
     position: int = -1
-    lineno: int = 0
-    charno: int = 0
+    lineno: int = 1
+    charno: int = 1
     current_char: str
     iterator: Iterator[str]
     current_item_start: Optional[int] = None
@@ -85,12 +85,12 @@ class Lexer:
 
     def advance(self) -> bool:
         """ Move forward one character """
+        self.position += 1
+
         try:
             self.current_char = next(self.iterator)
         except StopIteration:
             return False
-
-        self.position += 1
 
         if self.current_char == '\n':
             self.lineno += 1
@@ -172,12 +172,12 @@ class Lexer:
         if tag_name == '!--':
             while raw[self.position-3:self.position] != '-->':
                 self.advance()
-            return Tag(Node.COMMENT_NODE) # TODO add comment contents
+            return Tag(Node.COMMENT_NODE, lineno=self.lineno, charno=self.charno) # TODO add comment contents
         elif tag_name == '![CDATA[':
             # TODO add CDATA tests
             while raw[self.position-3:self.position] != ']]>':
                 self.advance()
-            return Tag(Node.CDATA_SECTION_NODE) # TODO add CDATA contents
+            return Tag(Node.CDATA_SECTION_NODE, lineno=self.lineno, charno=self.charno) # TODO add CDATA contents
 
         # Now get and remainder, and parse into key-value pairs...
 
@@ -207,7 +207,7 @@ class Lexer:
         assert raw[start_position] == '<'
         assert self.current_char == '>'
 
-        return Tag(node_type, tagName=tag_name, has_initial_backslash=has_initial_backslash, has_closing_backslash=has_closing_backslash, attributes=attributes)
+        return Tag(node_type, tagName=tag_name, has_initial_backslash=has_initial_backslash, has_closing_backslash=has_closing_backslash, attributes=attributes, lineno=self.lineno, charno=self.charno)
 
     def text_node(self) -> Tag:
         return Tag(Node.TEXT_NODE, nodeValue=self.raw[self.current_item_start: self.position], lineno=self.lineno, charno=self.charno)

@@ -12,8 +12,6 @@ from collections import namedtuple
 import re
 from xml.dom import Node
 
-import html5lib
-
 from .lexer import Lexer# , Node
 from . import rules
 
@@ -31,13 +29,8 @@ Comment = namedtuple('Comment', ('data'))
 # Splits <whitespace><anything><whitespace> apart.
 TEXT_MATCH = re.compile(r'(\s*)(\S?.*\S)(\s*)')
 
-from html5lib.html5parser import ParseError
-
 class HTML5Invalid(Exception):
     pass
-
-#class ParseError(HTML5Invalid):
-#    pass
 
 #class LintError(HTML5Invalid):
 #    pass
@@ -54,6 +47,9 @@ class EmptyPage(ValidationException):
 class MisplacedElement(ValidationException):
     pass
 
+class MisplacedEndTag(ValidationException):
+    pass
+
 class InvalidAttribute(ValidationException):
     pass
 
@@ -63,26 +59,40 @@ class NonSecureRequestInSecurePage(ValidationException):
 class UnclosedTags(ValidationException):
     pass
 
-PARSER = html5lib.HTMLParser(html5lib.treebuilders.getTreeBuilder('dom'), strict=True)
+class UnknownNodeType(Exception):
+    pass
 
 class Validator:
     """
-        Drills through a html5lib HTML tree, and checks all the elements
-        against various rules.
+        Runs through the nodes of a HTML tree (either from our internal lexer,
+        or can take a html5lib tree) and throws exceptions when there are problems.
     """
     def __init__(self, node_stream=None, tree=None):
         self.node_stream = node_stream
         if tree:
             self.node_stream = self.tree_to_stream(tree)
         self._in_doctype = False
-        self._inside = [] # a stack of 
+        self._inside = [] # a stack of tag names, that we're currently inside
+        self.currentNode = None
+
+    def _error(self, exception_type, error_message):
+        if self.currentNode:
+            try:
+                error_message = f"{self.currentNode.lineno}:{self.currentNode.charno}:{'>'.join(self._inside)} - {error_message}"
+            except AttributeError:
+                error_message = f"(HTML5Lib Parser) {error_message}"
+        raise exception_type(error_message)
 
     def __call__(self):
         """
             Actually validate the tree.
         """
+        # TODO: skip this for document-fragment validation mode:
+        #if self.node_stream[0].nodeType != Node.DOCUMENT_TYPE_NODE:
+        #    raise HTML5Invalid("Not a HTML Document")
 
         for currentNode in self.node_stream:
+            self.currentNode = currentNode
             if currentNode.nodeType == Node.DOCUMENT_TYPE_NODE:
                 self.doctype(currentNode.name, currentNode.publicId, currentNode.systemId)
 
@@ -92,13 +102,14 @@ class Validator:
             elif currentNode.nodeType == Node.ELEMENT_NODE:
                 if hasattr(currentNode, 'tagName'):
                     if currentNode.tagName in rules.void_elements:
-                        # TODO: what if a void el has an initial_backslash?
+                        if hasattr(currentNode, 'has_initial_backslash') and currentNode.has_initial_backslash:
+                            self._error(MisplacedEndTag, f"{currentNode.tagName} is a void (contentless) element, and so shouldn't have a closing tag.")
                         self.voidTag(currentNode.tagName, currentNode.attributes)
                     else:
                         # TODO: what if an el has_closing_backslash but isn't void?
                         # TODO: what if an el implies closing something else?
                         #       e.g. <td>in 1<td>not in 1</td>..
-                        if currentNode.has_initial_backslash:
+                        if hasattr(currentNode, 'has_initial_backslash') and currentNode.has_initial_backslash:
                             self.endTag(currentNode.tagName)
                         else:
                             # NEW CODE IN PROGRESS!:::: TODO TODO
@@ -142,7 +153,7 @@ class Validator:
         try:
             required_parents = rules.html_elements[name]
         except KeyError:
-            raise InvalidTag(f"{name} is not a valid HTML5 tag.")
+            self._error(InvalidTag, f"{name} is not a valid HTML5 tag.")
 
         if not self._inside or self._inside == ['html']:
             if name in rules.metadata_elements:
@@ -164,7 +175,7 @@ class Validator:
             self._inside.append('body')
 
         if not any(parent in self._inside for parent in required_parents):
-            raise MisplacedElement(f"{name} must be inside {required_parents} (currently: {self._inside})")
+            self._error(MisplacedElement, f"{name} must be inside {required_parents}")
 
     def check_valid_attrs(self, name, attributes):
         case_sensitive = 'svg' in self._inside
@@ -191,16 +202,16 @@ class Validator:
 
             # TODO: ng-, vue-, other custom attributes?  Should be spec'd by
             #       library users.
-            raise InvalidAttribute(f' {k} is not a valid attribute for {name}')
+            self._error(InvalidAttribute, f' {k} is not a valid attribute for {name}')
 
     def startTag(self, name, attributes):
         if 'svg' not in self._inside:
             name = name.lower()
 
         if name in rules.void_elements:
-            raise InvalidTag(f"{name} cannot be used as a Start Tag")
+            self._error(InvalidTag, f"{name} cannot be used as a Start Tag")
         if name in rules.non_recursable and name in self._inside:
-            raise MisplacedElement(f"{name} cannot be inside {name}")
+            self._error(MisplacedElement, f"{name} cannot be inside {name}")
 
         self.check_valid_place(name)
         self.check_valid_attrs(name, attributes)
@@ -209,10 +220,12 @@ class Validator:
         return StartTag(name, attributes)
 
     def document_node(self, node):
-        print('doctype!'); exit()
         self._in_doctype = True
 
     def endTag(self, name):
+        if not 'svg' in self._inside:
+            name = name.lower()
+
         while not self._inside[-1] == name:
             try:
                 if name in rules.closed_by_parent[self._inside[-1]]:
@@ -220,11 +233,14 @@ class Validator:
                 else:
                     raise KeyError(f"{self._inside[-1]} not closed by {name}")
             except KeyError:
-                raise MisplacedElement(f"End tag for {name} when not inside. (currently: {self._inside})")
+                if name in self._inside:
+                    self._error(MisplacedEndTag, f"End tag for '{name}' while other elements still open")
+                else:
+                    self._error(MisplacedEndTag, f"End tag for {name} when not inside")
         if self._inside[-1] == name:
             self._inside.pop()
         else:
-            raise MisplacedElement(f"End tag for {name} when not inside. (currently: {self._inside})")
+            self._error(MisplacedEndTag, f"End tag for {name} when not inside")
 
         self.check_valid_place(name)
         return EndTag(name)
@@ -257,7 +273,7 @@ class Validator:
         return DocType(name, publicId, systemId)
 
     def unknown(self, nodeType):
-        raise Exception(f'Unknown! {nodeType}')
+        self._error(UnknownNodeType, f'Unknown! {nodeType}')
 
 
 
@@ -270,9 +286,7 @@ def validate(text):
     if not text.strip():
         raise EmptyPage()
 
-    dom = PARSER.parse(text)
     stream = list(Lexer(text))
-    #print(stream)
 
     # validator = Validator(tree=dom)
     validator = Validator(node_stream=stream)
