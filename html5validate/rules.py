@@ -233,6 +233,11 @@ void_elements = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'i
     # SVG:
     'stop', 'circle', 'rect'))
 
+# Tags which can either be <...></...> or <... />
+optional_void_elements = frozenset((
+    # SVG:
+    'path',))
+
 
 #12.1.2.4 (part)
 implied_endtags = {
@@ -292,6 +297,7 @@ global_attributes = frozenset((
     "lang",
     "nonce",
     "spellcheck",
+    "style",
     "tabindex",
     "title",
     "translate",
@@ -395,7 +401,7 @@ element_attributes={
                 'type', 'referrerpolicy', 'sizes', 'imgsrcset', 'imagesizes',
                 'as', 'color'),
         'meta': # 4.2.5
-            ('name', 'http-equiv', 'content', 'charset'),
+            ('name', 'http-equiv', 'content', 'charset', 'property'),
         'style': # 4.2.6
             ('media',),
         'q': # 4.5.7

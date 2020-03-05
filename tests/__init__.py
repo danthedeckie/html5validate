@@ -7,8 +7,8 @@ import unittest
 from glob import glob
 from os.path import dirname, join as pathjoin
 
-import html5validate
-from html5validate import validate, Validator
+import html5validate.exceptions
+from html5validate.validator import validate, Validator
 
 import html5lib
 
@@ -17,17 +17,17 @@ def findfiles(test_type):
 
 class TestBasic(unittest.TestCase):
     def test_empty(self):
-        with self.assertRaises(html5validate.EmptyPage):
+        with self.assertRaises(html5validate.exceptions.EmptyPage):
             validate('')
 
     @unittest.skip # TODO
     def test_plaintext(self):
-        with self.assertRaises(html5validate.HTML5Invalid):
+        with self.assertRaises(html5validate.exceptions.HTML5Invalid):
             validate('hello world')
 
     @unittest.skip # TODO
     def test_ptag(self):
-        with self.assertRaises(html5validate.HTML5Invalid):
+        with self.assertRaises(html5validate.exceptions.HTML5Invalid):
             validate('<p>Hello!</p>')
 
     def test_valid_basic(self):
@@ -46,19 +46,19 @@ class TestBrokenHTML(unittest.TestCase):
     # TODO - move these tests out to proper files...
 
     def test_unclosed_h1tag(self):
-        with self.assertRaises(html5validate.MisplacedEndTag):
+        with self.assertRaises(html5validate.exceptions.MisplacedEndTag):
             validate('''<!doctype html><html><body><h1>hi</body></html>''')
 
     def test_invalid_attr(self):
-        with self.assertRaises(html5validate.InvalidAttribute):
+        with self.assertRaises(html5validate.exceptions.InvalidAttribute):
             validate('''<!doctype html><html><body><h1 class"NO">hi</h1></body></html> ''')
 
     def test_dangling_div(self):
-         with self.assertRaises(html5validate.MisplacedEndTag):
+        with self.assertRaises(html5validate.exceptions.MisplacedEndTag):
             validate('''<!doctype html><html><body><div>hi</body></html>''')
 
     def test_div_in_head(self):
-        with self.assertRaises(html5validate.MisplacedEndTag):
+        with self.assertRaises(html5validate.exceptions.MisplacedEndTag):
             # This is a 'misplaced_endtag' because a <div> automatically closes
             # the head. TODO: make an edge-case checker for this that gives a
             # more helpful explanation.
@@ -82,7 +82,7 @@ class TestFromFiles(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises(html5validate.ValidationException):
+                    with self.assertRaises(html5validate.exceptions.ValidationException):
                         validate(html.read())
 
     def test_misplaced_elements(self):
@@ -90,7 +90,7 @@ class TestFromFiles(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises(html5validate.MisplacedElement):
+                    with self.assertRaises(html5validate.exceptions.MisplacedElement):
                         validate(html.read())
 
     def test_misplaced_endtags(self):
@@ -98,7 +98,7 @@ class TestFromFiles(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises(html5validate.MisplacedEndTag):
+                    with self.assertRaises(html5validate.exceptions.MisplacedEndTag):
                         validate(html.read())
 
     def test_invalid_attributes(self):
@@ -106,7 +106,7 @@ class TestFromFiles(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises(html5validate.InvalidAttribute):
+                    with self.assertRaises(html5validate.exceptions.InvalidAttribute):
                         validate(html.read())
 
 
@@ -129,7 +129,7 @@ class TestHTML5LibParser(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.ValidationException)):
+                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.exceptions.ValidationException)):
                         self.validate(html.read())
 
     def test_misplaced_elements(self):
@@ -137,7 +137,7 @@ class TestHTML5LibParser(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.MisplacedElement)):
+                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.exceptions.MisplacedElement)):
                         self.validate(html.read())
 
     def test_misplaced_endtags(self):
@@ -145,7 +145,7 @@ class TestHTML5LibParser(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.MisplacedEndTag)):
+                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.exceptions.MisplacedEndTag)):
                         self.validate(html.read())
 
     def test_invalid_attributes(self):
@@ -153,7 +153,7 @@ class TestHTML5LibParser(unittest.TestCase):
         for filename in files:
             with open(filename) as html:
                 with self.subTest(f=filename):
-                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.InvalidAttribute)):
+                    with self.assertRaises((html5lib.html5parser.ParseError, html5validate.exceptions.InvalidAttribute)):
                         self.validate(html.read())
 
 

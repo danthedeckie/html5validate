@@ -161,7 +161,7 @@ class Lexer:
         if tag_name[0] == '?':
             node_type = Node.PROCESSING_INSTRUCTION
             tag_name = tag_name[1:]
-        elif tag_name == '!doctype':
+        elif tag_name.lower() == '!doctype':
             node_type = Node.DOCUMENT_TYPE_NODE
         else:
             node_type = Node.ELEMENT_NODE
@@ -169,15 +169,22 @@ class Lexer:
 
         # Comment and CDATA Nodes:
 
-        if tag_name == '!--':
-            while raw[self.position-3:self.position] != '-->':
-                self.advance()
-            return Tag(Node.COMMENT_NODE, lineno=self.lineno, charno=self.charno) # TODO add comment contents
-        elif tag_name == '![CDATA[':
-            # TODO add CDATA tests
-            while raw[self.position-3:self.position] != ']]>':
-                self.advance()
-            return Tag(Node.CDATA_SECTION_NODE, lineno=self.lineno, charno=self.charno) # TODO add CDATA contents
+        if tag_name in ('!--', '![CDATA['):
+            comment_start_position = self.position
+            tag = Tag(Node.COMMENT_NODE if tag_name == '!--' else Node.CDATA_SECTION_NODE,
+                      lineno=self.lineno, charno=self.charno)
+
+            if tag_name == '!--':
+                while raw[self.position-3:self.position] != '-->':
+                    self.advance()
+            elif tag_name == '![CDATA[':
+                # TODO add CDATA tests
+                while raw[self.position-3:self.position] != ']]>':
+                    self.advance()
+
+            tag.nodeValue = raw[comment_start_position:self.position-3]
+
+            return tag
 
         # Now get and remainder, and parse into key-value pairs...
 
@@ -196,7 +203,11 @@ class Lexer:
                 if key not in attributes:
                     attributes[key] = value
                 else:
-                    raise Exception("KEY USED TOO MANY TIMES!!!!") # TODO
+                    if key == 'style':
+                        print(f'{self.lineno}:{self.charno} Multiple style elements in tag "{tag_name}"')
+                        attributes['style'] = f'{attributes["style"]};{value}'
+                    else:
+                        raise Exception(f"{self.lineno}:{self.charno} Attribute {key} previously used in tag '{tag_name}'") # TODO
             else:
                 break
 
@@ -204,10 +215,22 @@ class Lexer:
             has_closing_backslash = True
             self.advance()
 
-        assert raw[start_position] == '<'
-        assert self.current_char == '>'
+        try:
+            assert raw[start_position] == '<'
+            assert self.current_char == '>'
+        except AssertionError:
+            raise Exception(f'{self.lineno}:{self.charno} - Confused parsing a tag "{tag_name}"')
 
         return Tag(node_type, tagName=tag_name, has_initial_backslash=has_initial_backslash, has_closing_backslash=has_closing_backslash, attributes=attributes, lineno=self.lineno, charno=self.charno)
+
+    def read_scripttag_contents(self) -> str:
+        start_position = self.position
+
+        while self.raw[self.position:self.position + 8] != '</script':
+            self.advance()
+
+        return self.raw[start_position:self.position]
+
 
     def text_node(self) -> Tag:
         return Tag(Node.TEXT_NODE, nodeValue=self.raw[self.current_item_start: self.position], lineno=self.lineno, charno=self.charno)
@@ -219,7 +242,14 @@ class Lexer:
                     if self.current_item_start is not None and self.current_item_start < self.position:
                         yield self.text_node()
                         self.current_item_start = None
-                    yield self.read_tag()
+                    tag = self.read_tag()
+                    if tag.tagName == 'script':
+                        tag.nodeValue = self.read_scripttag_contents()
+                        yield tag
+                        tag = self.read_tag() # end script tag
+                    yield tag
+
+
                 else:
                     if self.current_item_start is None:
                         self.current_item_start = self.position
