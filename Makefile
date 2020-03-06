@@ -17,3 +17,10 @@ pypi: test dist/
 clean:
 	rm -r build
 	rm -r dist
+
+.venv:
+	python3 -m venv .venv
+	.venv/bin/pip install black
+
+format: .venv
+	.venv/bin/black html5validate tests
